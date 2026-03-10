@@ -2,7 +2,6 @@
 
 A functional 2-branch SD-WAN simulation built on VirtualBox VMs using pfSense, FRR, WireGuard, and a Python/Flask controller. Demonstrates real SD-WAN concepts: dual WAN links, dynamic routing, encrypted overlay tunnels, link quality monitoring, and centralized traffic steering decisions.
 
----
 
 ## Architecture
 
@@ -33,7 +32,6 @@ Client-B
 pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 ```
 
----
 
 ## Stack
 
@@ -47,7 +45,6 @@ pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 | Database | SQLite |
 | Branch Agent | Python |
 
----
 
 ## Features
 
@@ -58,7 +55,6 @@ pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 - **Branch agent** — reports WAN link metrics to the central controller every 10 seconds
 - **SD-WAN controller** — scores each WAN link and decides optimal path per branch
 
----
 
 ## IP Plan
 
@@ -73,7 +69,6 @@ pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 | pfSense-B | WAN2 | 10.2.2.2/30 |
 | pfSense-B | WireGuard | 172.16.0.2/30 |
 
----
 
 ## Controller API
 
@@ -171,18 +166,8 @@ pip install requests
 python branch_agent.py
 ```
 
----
 
 ## Project Background
 
 Built as part of a networking project to simulate real SD-WAN concepts learned during B.Tech. Prior work includes OSPF/BGP labs with pfSense,  MITM attack simulation with Wireshark/hping, and DNS server administration.
 
----
-
-## Roadmap
-
-- [ ] pfSense shell script to read dpinger output and post to controller directly
-- [ ] Policy routing enforcement on pfSense based on controller decision
-- [ ] Simulate WAN degradation with `tc` / `ipfw` traffic shaping
-- [ ] Controller web dashboard (Flask + HTML)
-- [ ] Bandwidth measurement per WAN link
