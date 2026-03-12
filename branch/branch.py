@@ -33,6 +33,7 @@ def report():
         except Exception as e:
             print("Controller unreachable:", e)
         time.sleep(10)
+        
 
 if __name__ == "__main__":
     report()
