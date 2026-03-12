@@ -6,30 +6,25 @@ A functional 2-branch SD-WAN simulation built on VirtualBox VMs using pfSense, F
 ## Architecture
 
 ```
-Client-A
-    |
-LAN-A (192.168.1.0/24)
-    |
-pfSense-A (192.168.1.10)
-    |           |
-  WAN1        WAN2
-(10.1.1.1)  (10.2.2.1)
-    |           |
-----ISP1------ISP2----   ← VirtualBox Internal Networks
-    |           |
-(10.1.1.2)  (10.2.2.2)
-  WAN1        WAN2
-    |           |
-pfSense-B (192.168.2.10)
-    |
-LAN-B (192.168.2.0/24)
-    |
-Client-B
-```
+                        SD-WAN CONTROLLER
+                        (Flask + SQLite)
+                         /            \
+                  metrics/              \metrics
+                       /                \
+Client-A  -----    pfSense-A          pfSense-B    -----  Client-B
+   |                   |                   |                  |
+192.168.1.x      192.168.1.10        192.168.2.10       192.168.2.x
+   |                   |                   |                  |
+LAN-A              WAN1  WAN2          WAN1  WAN2          LAN-B
+192.168.1.0/24   10.1.1.1 10.2.2.1  10.1.1.2 10.2.2.2  192.168.2.0/24
+                    |       |            |       |
+                    +--ISP1-+            +-ISP1--+
+                    |   10.1.1.0/30      |
+                    +--ISP2-+            +-ISP2--+
+                        10.2.2.0/30
 
-### Overlay Tunnel (WireGuard)
-```
-pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
+WireGuard Tunnel: 172.16.0.1 (A) <=========> 172.16.0.2 (B)
+OSPF: all subnets in area 0.0.0.0
 ```
 
 
@@ -49,11 +44,12 @@ pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 ## Features
 
 - **Dual WAN links per branch** — two simulated ISP paths between branches
-- **OSPF routing** — dynamic route discovery and equal-cost multipath across both WAN links
+- **OSPF routing** — dynamic route discovery and ECMP across both WAN links
 - **WireGuard overlay** — encrypted tunnel between branches over the WAN links
 - **Gateway monitoring** — pfSense dpinger measures RTT and packet loss per WAN link in real time
 - **Branch agent** — reports WAN link metrics to the central controller every 10 seconds
 - **SD-WAN controller** — scores each WAN link and decides optimal path per branch
+- **Failover script** — pfSense polls controller and switches default route accordingly
 
 
 ## IP Plan
@@ -68,6 +64,20 @@ pfSense-A (172.16.0.1) ←—WireGuard—→ pfSense-B (172.16.0.2)
 | pfSense-B | WAN1 | 10.1.1.2/30 |
 | pfSense-B | WAN2 | 10.2.2.2/30 |
 | pfSense-B | WireGuard | 172.16.0.2/30 |
+
+
+## Repository Structure
+
+```
+sdwan-lab/
+├── controller/
+│   ├── controller.py       # Flask REST API + SQLite + decision logic
+├── branch/
+│   ├── branch_agent.py     # Measures WAN latency/loss, reports to controller
+├── pfsense/
+│   └── pfsense_switcher.sh # Polls controller, applies route switching on pfSense
+└── README.md
+```
 
 
 ## Controller API
@@ -95,14 +105,9 @@ Branch agent posts WAN link metrics.
 ### GET `/api/decisions/<branch_id>`
 Returns last 20 routing decisions for a branch.
 
-```json
-[
-  { "active_wan": "WAN1", "reason": "WAN1 score=1.4", "ts": "2026-03-09T12:58:36" },
-  { "active_wan": "WAN2", "reason": "WAN2 score=1.3 better", "ts": "2026-03-09T12:57:11" }
-]
-```
+### GET `/api/metrics/<branch_id>`
+Returns last 40 raw metric readings for a branch.
 
----
 
 ## Decision Logic
 
@@ -121,53 +126,18 @@ else:
     use WAN2
 ```
 
----
+## Route Switching (pfSense)
 
-## Setup
+`pfsense/pfsense_switcher.sh` runs on each pfSense VM. It:
 
-### 1. VirtualBox Network Config
+1. Calls `GET /api/decisions/<branch_id>` on the controller
+2. Reads the current default route via `netstat -rn`
+3. Switches the route only if the controller decision differs from current state
+4. Logs every action to `/var/log/sdwan_switcher.log`
 
-| VM | Adapter 1 | Adapter 2 | Adapter 3 | Adapter 4 |
-|---|---|---|---|---|
-| pfSense-A | NAT | Internal `lan_a` | Internal `isp1` | Internal `isp2` |
-| pfSense-B | NAT | Internal `lan_b` | Internal `isp1` | Internal `isp2` |
-| Client-A | Internal `lan_a` | — | — | — |
-| Client-B | Internal `lan_b` | — | — | — |
-
-### 2. pfSense Interface Assignment
-
-Assign and configure static IPs as per the IP plan above. Uncheck **Block private networks** on WAN1 and WAN2.
-
-### 3. FRR / OSPF
-
-Install FRR package via **System → Package Manager**. Enable OSPF and add networks:
-
-- `192.168.1.0/24` area `0.0.0.0` (pfSense-A LAN)
-- `10.1.1.0/30` area `0.0.0.0`
-- `10.2.2.0/30` area `0.0.0.0`
-
-Verify with: **Services → FRR → Status** — both branches should appear as OSPF neighbors.
-
-### 4. WireGuard
-
-Install WireGuard package. Create tunnel on each pfSense, generate key pairs, exchange public keys, set allowed IPs. Assign tunnel interface and add firewall pass rules on WAN1 and WAN2 for UDP port `51820`.
-
-### 5. Controller
-
-```bash
-pip install flask
-python controller.py
-```
-
-### 6. Branch Agent
-
-```bash
-pip install requests
-python branch_agent.py
-```
+Deploy on pfSense via **Diagnostics → Edit File**, save to `/usr/local/bin/sdwan_switcher.sh`, then add to cron via **Services → Cron** (requires cron package) to run every minute.
 
 
 ## Project Background
 
-Built as part of a networking project to simulate real SD-WAN concepts learned during B.Tech. Prior work includes OSPF/BGP labs with pfSense,  MITM attack simulation with Wireshark/hping, and DNS server administration.
-
+Built as part of a networking lab to simulate real SD-WAN concepts learned during B.Tech — including OSPF/BGP with pfSense/FRR, C socket programming for P2P transfers, MITM attack simulation with Wireshark/hping, and DNS server administration.
