@@ -140,4 +140,4 @@ Deploy on pfSense via **Diagnostics → Edit File**, save to `/usr/local/bin/sdw
 
 ## Project Background
 
-Built as part of a networking lab to simulate real SD-WAN concepts learned during B.Tech — including OSPF/BGP with pfSense/FRR, C socket programming for P2P transfers, MITM attack simulation with Wireshark/hping, and DNS server administration.
+Built as part of a networking lab to simulate real SD-WAN concepts learned during B.Tech — including OSPF/BGP with pfSense/FRR.
